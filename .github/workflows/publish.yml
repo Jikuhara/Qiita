@@ -1,29 +1,61 @@
-# Please set 'QIITA_TOKEN' secret to your repository
-name: Publish articles
+name: Publish TIL
 
 on:
   push:
     branches:
       - main
-      - master
-  workflow_dispatch:
-
-permissions:
-  contents: write
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+    paths:
+      - 'articles/**/*.md'
 
 jobs:
-  publish_articles:
+  publish-zenn:
+    name: Publish to Zenn
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v3
         with:
-          fetch-depth: 0
-      - uses: increments/qiita-cli/actions/publish@v1
-        with:
-          qiita-token: ${{ secrets.QIITA_TOKEN }}
-          root: "."
+          node-version: '20'
+
+      - name: Install Zenn CLI
+        run: npm install -g zenn-cli
+
+      - name: Publish new Zenn articles
+        env:
+          ZENN_TOKEN: ${{ secrets.ZENN_TOKEN }}
+        run: |
+          for file in articles/*.md; do
+            slug=$(basename "$file" .md)
+            # --file オプションで対象ファイルを指定
+            npx zenn publish --slug "$slug" --file "$file" --token "$ZENN_TOKEN"
+          done
+
+  publish-qiita:
+    name: Publish to Qiita
+    runs-on: ubuntu-latest
+    needs: publish-zenn
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Publish new Qiita items via API
+        env:
+          QIITA_TOKEN: ${{ secrets.QIITA_TOKEN }}
+        run: |
+          for file in articles/*.md; do
+            # Markdown の最初の見出しをタイトルに
+            TITLE=$(grep -m1 '^# ' "$file" | sed 's/^# //')
+            BODY=$(jq -Rs . < "$file")
+            curl -s -X POST https://qiita.com/api/v2/items \
+              -H "Authorization: Bearer $Q IITA_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "body": '"$BODY"',
+                "title": "'"$TITLE"'",
+                "private": false,
+                "tags": [{"name":"til"}]
+              }'
+          done
