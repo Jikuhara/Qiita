@@ -1,5 +1,6 @@
 {
   "devDependencies": {
-    "@qiita/qiita-cli": "^1.6.2"
+    "@qiita/qiita-cli": "^1.6.2",
+    "zenn-cli": "^0.1.159"
   }
 }
