@@ -1,4 +1,4 @@
-name: Publish TIL to Zenn & Qiita
+name: Publish TIL
 
 on:
   push:
@@ -8,48 +8,30 @@ on:
       - 'articles/**/*.md'
 
 jobs:
-  publish:
+  publish-zenn:
     runs-on: ubuntu-latest
     steps:
-      # ソース取得
       - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with: { node-version: '20' }
+      - run: npm install -g zenn-cli
+      - run: |
+          for f in articles/*.md; do
+            slug=$(basename "$f" .md)
+            npx zenn publish --slug "$slug" --file "$f" --token ${{ secrets.ZENN_TOKEN }}
+          done
 
-      # Node.js と jq(Webhook ペイロード整形用) をセットアップ
-      - name: Setup Node.js & jq
-        uses: actions/setup-node@v3
-        with:
-          node-version: '20'
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      # Zenn CLI をグローバルインストール
-      - name: Install Zenn CLI
-        run: npm install -g zenn-cli
-
-      # Zenn と Qiita に投稿
-      - name: Publish to Zenn and Qiita
-        env:
-          ZENN_TOKEN: ${{ secrets.ZENN_TOKEN }}
-          QIITA_TOKEN: ${{ secrets.QIITA_TOKEN }}
-        run: |
-          for file in articles/*.md; do
-            slug=$(basename "$file" .md)
-            echo "👉 Publishing ${slug} to Zenn..."
-            npx zenn publish \
-              --slug "$slug" \
-              --file "$file" \
-              --token "$ZENN_TOKEN"
-
-            echo "👉 Publishing ${slug} to Qiita..."
-            title=$(grep -m1 '^# ' "$file" | sed 's/^# //')
-            body=$(jq -Rs . < "$file")
+  publish-qiita:
+    needs: publish-zenn
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: |
+          for f in articles/*.md; do
+            TITLE=$(grep -m1 '^# ' "$f" | sed 's/^# //')
+            BODY=$(jq -Rs . < "$f")
             curl -s -X POST https://qiita.com/api/v2/items \
-              -H "Authorization: Bearer $QIITA_TOKEN" \
+              -H "Authorization: Bearer ${{ secrets.QIITA_TOKEN }}" \
               -H "Content-Type: application/json" \
-              -d '{
-                "title":"'"$title"'",
-                "body":'"$body"',
-                "private":false,
-                "tags":[{"name":"til"}]
-              }'
+              -d '{ "title":"'"$TITLE"'", "body":'"$BODY"', "private":false, "tags":[{"name":"til"}] }'
           done
