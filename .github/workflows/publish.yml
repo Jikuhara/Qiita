@@ -21,17 +21,27 @@ jobs:
             npx zenn publish --slug "$slug" --file "$f" --token ${{ secrets.ZENN_TOKEN }}
           done
 
+  # —— Zenn完了後にQiitaだけを担当するジョブ ——
   publish-qiita:
     needs: publish-zenn
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - run: |
-          for f in articles/*.md; do
-            TITLE=$(grep -m1 '^# ' "$f" | sed 's/^# //')
-            BODY=$(jq -Rs . < "$f")
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install jq for JSON formatting
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Publish to Qiita
+        env:
+          QIITA_TOKEN: ${{ secrets.QIITA_TOKEN }}
+        run: |
+          for file in articles/*.md; do
+            title=$(grep -m1 '^# ' "$file" | sed 's/^# //')
+            body=$(jq -Rs . < "$file")
+            echo "→ Qiita に公開中: $title"
             curl -s -X POST https://qiita.com/api/v2/items \
-              -H "Authorization: Bearer ${{ secrets.QIITA_TOKEN }}" \
+              -H "Authorization: Bearer $Q IITA_TOKEN" \
               -H "Content-Type: application/json" \
-              -d '{ "title":"'"$TITLE"'", "body":'"$BODY"', "private":false, "tags":[{"name":"til"}] }'
+              -d "{\"title\":\"$title\",\"body\":$body,\"private\":false,\"tags\":[{\"name\":\"til\"}]}"
           done
